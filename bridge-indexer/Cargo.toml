@@ -1,0 +1,20 @@
+[package]
+name = "bridge-indexer"
+version = "0.1.0"
+edition = "2021"
+default-run = "bridge-indexer"
+
+[dependencies]
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "uuid", "chrono", "bigdecimal"] }
+tokio = { version = "1.0", features = ["full"] }
+dotenv = "0.15"
+uuid = { version = "1.0", features = ["v4"] }
+bigdecimal = "0.3"
+chrono = "0.4.40"
+ethers = "2.0"
+
+[dev-dependencies]
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "uuid", "chrono", "bigdecimal"] }
+
+[profile.release]
+opt-level = 3
