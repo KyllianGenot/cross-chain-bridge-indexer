@@ -10,8 +10,8 @@ CREATE TABLE deposits (
     token_address VARCHAR(42) NOT NULL, -- Token contract address (0x + 40 chars)
     from_address VARCHAR(42) NOT NULL, -- Sender address
     to_address VARCHAR(42) NOT NULL, -- Recipient address on target chain
-    amount NUMERIC(38, 18) NOT NULL, -- High-precision token amount
-    nonce BIGINT NOT NULL, -- Unique nonce from Deposit event
+    amount TEXT NOT NULL, -- Changed from NUMERIC to TEXT to handle large blockchain values
+    nonce TEXT NOT NULL, -- Unique nonce from Deposit event
     processed BOOLEAN DEFAULT FALSE, -- Whether distribution has occurred
     finality_confirmed BOOLEAN DEFAULT FALSE, -- Whether block finality is reached
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -28,8 +28,8 @@ CREATE TABLE distributions (
     block_number BIGINT NOT NULL, -- Block where distribution occurred
     token_address VARCHAR(42) NOT NULL, -- Token contract address
     recipient_address VARCHAR(42) NOT NULL, -- Recipient address
-    amount NUMERIC(38, 18) NOT NULL, -- Distributed amount
-    nonce BIGINT NOT NULL, -- Matches deposit nonce
+    amount TEXT NOT NULL, -- Changed from NUMERIC to TEXT to handle large blockchain values
+    nonce TEXT NOT NULL, -- Matches deposit nonce
     status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
