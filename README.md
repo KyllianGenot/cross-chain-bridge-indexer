@@ -1,10 +1,142 @@
-# Cross-Chain Bridge Indexer - Setup Guide
+# Cross-Chain Bridge Indexer
 
-This guide will walk you through setting up and running the cross-chain bridge indexer, from environment preparation to using the bridge for cross-chain transfers.
+This guide provides instructions for setting up and running the cross-chain bridge indexer for token transfers between Holesky and Base Sepolia networks.
 
-## Prerequisites
+## Quick Start Guide
 
-### Install Rust
+### Prerequisites Checklist
+
+Before starting, make sure you have:
+- [ ] PostgreSQL password (existing or you'll create one)
+- [ ] Alchemy API key (single key works for both networks)
+
+### Quick Setup Commands
+
+```bash
+# Clone repository
+git clone https://github.com/KyllianGenot/cross-chain-bridge-indexer.git
+cd cross-chain-bridge-indexer/bridge-indexer
+```
+
+```bash
+# Setup PostgreSQL database
+psql -U postgres
+```
+
+In PostgreSQL prompt this to create the database and the user:
+```sql
+CREATE DATABASE bridge_indexer;
+CREATE USER indexer_user WITH ENCRYPTED PASSWORD 'your_secure_password';
+GRANT ALL PRIVILEGES ON DATABASE bridge_indexer TO indexer_user;
+
+-- Connect to the bridge_indexer database
+\c bridge_indexer
+```
+Then, prompt this to set the permissions:
+```sql
+-- Set all necessary permissions
+ALTER SCHEMA public OWNER TO indexer_user;
+GRANT ALL ON SCHEMA public TO indexer_user;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO indexer_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO indexer_user;
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO indexer_user;
+
+-- Set default privileges for future objects
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO indexer_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO indexer_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO indexer_user;
+\q
+```
+
+```bash
+# Configure environment
+cp .env.example .env
+```
+
+Edit .env and update:
+- Replace `YOUR_ALCHEMY_API_KEY` with your Alchemy API key
+- Update `your_secure_password` in the DATABASE_URL
+
+```bash
+# Initialize database schema
+psql -U indexer_user -d bridge_indexer -h localhost -f init.sql
+```
+
+```bash
+# Build and run
+cargo build
+source .env
+cargo run
+```
+
+### Check Token Balances
+
+Open a new terminal window to run these commands while keeping the indexer running in the original terminal:
+
+```bash
+# Load environment variables in the new terminal
+source .env
+
+# Check token balance on Holesky 
+cast call $HOLESKY_TEST_TOKEN "balanceOf(address)(uint256)" $WALLET_ADDRESS --rpc-url $HOLESKY_RPC_URL
+```
+
+```bash
+# Check token balance on Base Sepolia
+cast call $TARGET_CHAIN_TEST_TOKEN "balanceOf(address)(uint256)" $WALLET_ADDRESS --rpc-url $TARGET_CHAIN_RPC_URL
+```
+
+### Bridge Tokens (Holesky to Base Sepolia)
+
+In your second terminal:
+
+```bash
+# Approve tokens
+cast send $HOLESKY_TEST_TOKEN "approve(address,uint256)" $HOLESKY_BRIDGE_ADDRESS 1000000000000000000 --rpc-url $HOLESKY_RPC_URL --private-key $PRIVATE_KEY
+```
+
+```bash
+# Deposit tokens
+cast send $HOLESKY_BRIDGE_ADDRESS "deposit(address,uint256,address)" $HOLESKY_TEST_TOKEN 1000000000000000000 $WALLET_ADDRESS --rpc-url $HOLESKY_RPC_URL --private-key $PRIVATE_KEY
+```
+
+Switch back to your first terminal to observe the indexer processing the transaction. You should see log messages indicating that the deposit event was detected.
+
+After ~2-5 minutes, check the token balance in your second terminal:
+
+```bash
+# Verify receipt
+cast call $TARGET_CHAIN_TEST_TOKEN "balanceOf(address)(uint256)" $WALLET_ADDRESS --rpc-url $TARGET_CHAIN_RPC_URL
+```
+
+### Bridge Tokens (Base Sepolia to Holesky)
+
+In your second terminal:
+
+```bash
+# Approve tokens
+cast send $TARGET_CHAIN_TEST_TOKEN "approve(address,uint256)" $TARGET_CHAIN_BRIDGE_ADDRESS 1000000000000000000 --rpc-url $TARGET_CHAIN_RPC_URL --private-key $PRIVATE_KEY
+```
+
+```bash
+# Deposit tokens
+cast send $TARGET_CHAIN_BRIDGE_ADDRESS "deposit(address,uint256,address)" $TARGET_CHAIN_TEST_TOKEN 1000000000000000000 $WALLET_ADDRESS --rpc-url $TARGET_CHAIN_RPC_URL --private-key $PRIVATE_KEY
+```
+
+Switch back to your first terminal to observe the indexer processing the transaction. You should see log messages indicating that the deposit event was detected.
+
+After ~2-5 minutes, check the token balance in your second terminal:
+
+```bash
+# Verify receipt
+cast call $HOLESKY_TEST_TOKEN "balanceOf(address)(uint256)" $WALLET_ADDRESS --rpc-url $HOLESKY_RPC_URL
+```
+
+## Complete Setup Guide
+
+### Prerequisites
+
+#### Install Rust
 
 For Linux/macOS:
 ```bash
@@ -25,7 +157,7 @@ rustc --version
 cargo --version
 ```
 
-### Install PostgreSQL
+#### Install PostgreSQL
 
 For Ubuntu/Debian:
 ```bash
@@ -48,7 +180,7 @@ Verify installation:
 psql --version
 ```
 
-### Start PostgreSQL Service
+#### Start PostgreSQL Service
 
 Make sure to start the PostgreSQL service after installation:
 
@@ -67,7 +199,7 @@ For Windows:
 - PostgreSQL should start automatically after installation
 - If not, open Services (services.msc) and start the PostgreSQL service
 
-### Install Git
+#### Install Git
 
 For Ubuntu/Debian:
 ```bash
@@ -89,7 +221,7 @@ Verify installation:
 git --version
 ```
 
-## Environment Setup
+### Environment Setup
 
 Create a project directory:
 ```bash
@@ -97,36 +229,13 @@ mkdir -p ~/projects
 cd ~/projects
 ```
 
-### Getting Blockchain API Keys
+#### Getting Blockchain API Keys
 
 You'll need an API key from Alchemy:
 - Create a free account at Alchemy
-- Copy your API key for use in the .env file
+- Copy your API key for use in the .env file (same key works for both networks)
 
-### Wallet Preparation
-
-You need a wallet with funds on both networks:
-- Install MetaMask
-- Add both networks to MetaMask:
-
-Holesky Testnet:
-- Network Name: Holesky Testnet
-- RPC URL: https://ethereum-holesky.publicnode.com
-- Chain ID: 17000
-- Currency Symbol: ETH
-- Block Explorer: https://holesky.etherscan.io
-
-Base Sepolia:
-- Network Name: Base Sepolia
-- RPC URL: https://sepolia.base.org
-- Chain ID: 84532
-- Currency Symbol: ETH
-- Block Explorer: https://sepolia.basescan.org
-
-- Get test ETH for Holesky from Holesky Faucet
-- For Base Sepolia ETH, use a bridge to convert Holesky ETH to Base Sepolia ETH
-
-## Database Configuration
+### Database Configuration
 
 Set up the PostgreSQL database:
 ```bash
@@ -146,7 +255,7 @@ psql -U indexer_user -d bridge_indexer -W
 ```
 Replace 'your_secure_password' with a strong password.
 
-## Installing the Indexer
+### Installing the Indexer
 
 Get the indexer code and set it up:
 ```bash
@@ -183,11 +292,10 @@ DATABASE_URL=postgres://indexer_user:your_secure_password@localhost:5432/bridge_
 ```
 
 Replace:
-- YOUR_ALCHEMY_API_KEY: Your Alchemy API key
-- YOUR_ETHERSCAN_API_KEY: Your Etherscan API key
+- YOUR_ALCHEMY_API_KEY: Your Alchemy API key (same key for both networks)
 - your_secure_password: The password you set for indexer_user
 
-## Initialize Database Schema
+### Initialize Database Schema
 
 Initialize the database:
 ```bash
@@ -195,7 +303,7 @@ Initialize the database:
 psql -U indexer_user -d bridge_indexer -h localhost -f init.sql
 ```
 
-## Build the Indexer
+### Build the Indexer
 
 Compile the indexer:
 ```bash
@@ -203,7 +311,7 @@ Compile the indexer:
 cargo build
 ```
 
-## Running the Indexer
+### Running the Indexer
 
 Before starting the indexer, make sure to load the environment variables:
 ```bash
@@ -214,7 +322,7 @@ source .env
 cargo run
 ```
 
-The indexer will connect to both blockchain networks, subscribe to deposit events, and process them as they occur.
+The indexer will connect to both blockchain networks, subscribe to deposit events, and process them as they occur. Keep this terminal window open and running while you perform bridge operations in a new terminal.
 
 ## Using the Bridge
 
@@ -228,208 +336,96 @@ Base Sepolia Network:
 - Test Token: 0xBD3f33605c2aB407e6036d3ad931EEaD01941eb5
 - Bridge Contract: 0xd30E3201a1e15C9Ba45F6bA3BCCE53a6a3A0d9ab
 
+### Checking Token Balances
+
+Open a new terminal window for these operations, keeping the indexer running in the original terminal:
+
+```bash
+# Navigate to project directory in the new terminal
+cd cross-chain-bridge-indexer/bridge-indexer
+
+# Load environment variables in the new terminal
+source .env
+
+# Check Holesky token balance
+cast call $HOLESKY_TEST_TOKEN "balanceOf(address)(uint256)" $WALLET_ADDRESS --rpc-url $HOLESKY_RPC_URL
+```
+
+```bash
+# Check Base Sepolia token balance
+cast call $TARGET_CHAIN_TEST_TOKEN "balanceOf(address)(uint256)" $WALLET_ADDRESS --rpc-url $TARGET_CHAIN_RPC_URL
+```
+
 ### Bridging Tokens from Holesky to Base Sepolia
 
-To bridge tokens (either the default test tokens or your own) from Holesky to Base Sepolia:
+In your second terminal:
 
 1. **Approve the Bridge to Spend Your Tokens:**
-   - Using cast:
-     ```bash
-     cast send $HOLESKY_TEST_TOKEN "approve(address,uint256)" $HOLESKY_BRIDGE_ADDRESS 1000000000000000000 --rpc-url $HOLESKY_RPC_URL --private-key $PRIVATE_KEY
-     ```
-     - Replace $HOLESKY_TEST_TOKEN with YOUR_HOLESKY_TOKEN_ADDRESS if using your own token.
-     - 1000000000000000000 = 1 token (adjust based on your token's decimals).
-   - Via Etherscan:
-     - Go to your token contract on Holesky Etherscan.
-     - Connect your wallet using the same private key specified in your .env file.
-     - Call approve:
-       - spender: $HOLESKY_BRIDGE_ADDRESS (0xc2d3fF175A41B78d6b3897A778809973bF2978C9)
-       - amount: 1000000000000000000 (1 token in wei)
+   ```bash
+   cast send $HOLESKY_TEST_TOKEN "approve(address,uint256)" $HOLESKY_BRIDGE_ADDRESS 1000000000000000000 --rpc-url $HOLESKY_RPC_URL --private-key $PRIVATE_KEY
+   ```
+   - Replace $HOLESKY_TEST_TOKEN with YOUR_HOLESKY_TOKEN_ADDRESS if using your own token.
+   - 1000000000000000000 = 1 token (adjust based on your token's decimals).
 
 2. **Deposit Tokens into the Bridge:**
-   - Using cast:
-     ```bash
-     cast send $HOLESKY_BRIDGE_ADDRESS "deposit(address,uint256,address)" $HOLESKY_TEST_TOKEN 1000000000000000000 $WALLET_ADDRESS --rpc-url $HOLESKY_RPC_URL --private-key $PRIVATE_KEY
-     ```
-     - Replace $HOLESKY_TEST_TOKEN with YOUR_HOLESKY_TOKEN_ADDRESS if using your own token.
-   - Via Etherscan:
-     - Go to the bridge contract on Holesky Etherscan.
-     - Ensure you're connected with the wallet using the private key from your .env file.
-     - Call deposit:
-       - token: $HOLESKY_TEST_TOKEN (0xCd8b9bc8E9c7Ce2e886ea11afA07Da4d13F78a4E) or YOUR_HOLESKY_TOKEN_ADDRESS
-       - amount: 1000000000000000000 (1 token in wei)
-       - recipient: YOUR_WALLET_ADDRESS
+   ```bash
+   cast send $HOLESKY_BRIDGE_ADDRESS "deposit(address,uint256,address)" $HOLESKY_TEST_TOKEN 1000000000000000000 $WALLET_ADDRESS --rpc-url $HOLESKY_RPC_URL --private-key $PRIVATE_KEY
+   ```
 
-3. **Wait for Indexer to Process:**
-   - The indexer listens for the Deposit event on Holesky.
-   - After $HOLESKY_CONFIRMATION_BLOCKS (12 blocks), it triggers distribute on Base Sepolia using the bridge owner's private key.
-   - The corresponding tokens (e.g., $TARGET_CHAIN_TEST_TOKEN or YOUR_BASE_SEPOLIA_TOKEN_ADDRESS) are transferred to YOUR_WALLET_ADDRESS on Base Sepolia.
+3. **Switch back to the first terminal** to observe the indexer processing the transaction. You should see log messages indicating that a deposit event was detected and processed.
 
-4. **Check Receipt on Base Sepolia:**
-   - Monitor your wallet balance on Base Sepolia for the tokens.
-   - Use Basescan to verify the Distribution event: Bridge Contract.
+4. **Verify Receipt on Base Sepolia** (back in the second terminal):
+   ```bash
+   # Wait ~2-5 minutes for processing
+   cast call $TARGET_CHAIN_TEST_TOKEN "balanceOf(address)(uint256)" $WALLET_ADDRESS --rpc-url $TARGET_CHAIN_RPC_URL
+   ```
 
 ### Bridging Tokens from Base Sepolia to Holesky
 
-To bridge tokens back from Base Sepolia to Holesky:
+In your second terminal:
 
 1. **Approve the Bridge to Spend Your Tokens:**
-   - Using cast:
-     ```bash
-     cast send $TARGET_CHAIN_TEST_TOKEN "approve(address,uint256)" $TARGET_CHAIN_BRIDGE_ADDRESS 1000000000000000000 --rpc-url $TARGET_CHAIN_RPC_URL --private-key $PRIVATE_KEY
-     ```
-     - Replace $TARGET_CHAIN_TEST_TOKEN with YOUR_BASE_SEPOLIA_TOKEN_ADDRESS if using your own token.
-   - Via Basescan:
-     - Go to your token contract on Basescan.
-     - Connect your wallet using the same private key specified in your .env file.
-     - Call approve:
-       - spender: $TARGET_CHAIN_BRIDGE_ADDRESS (0xd30E3201a1e15C9Ba45F6bA3BCCE53a6a3A0d9ab)
-       - amount: 1000000000000000000
+   ```bash
+   cast send $TARGET_CHAIN_TEST_TOKEN "approve(address,uint256)" $TARGET_CHAIN_BRIDGE_ADDRESS 1000000000000000000 --rpc-url $TARGET_CHAIN_RPC_URL --private-key $PRIVATE_KEY
+   ```
 
 2. **Deposit Tokens into the Bridge:**
-   - Using cast:
-     ```bash
-     cast send $TARGET_CHAIN_BRIDGE_ADDRESS "deposit(address,uint256,address)" $TARGET_CHAIN_TEST_TOKEN 1000000000000000000 $WALLET_ADDRESS --rpc-url $TARGET_CHAIN_RPC_URL --private-key $PRIVATE_KEY
-     ```
-     - Replace $TARGET_CHAIN_TEST_TOKEN with YOUR_BASE_SEPOLIA_TOKEN_ADDRESS if using your own token.
-   - Via Basescan:
-     - Go to the bridge contract on Basescan.
-     - Ensure you're connected with the wallet using the private key from your .env file.
-     - Call deposit:
-       - token: $TARGET_CHAIN_TEST_TOKEN (0xBD3f33605c2aB407e6036d3ad931EEaD01941eb5) or YOUR_BASE_SEPOLIA_TOKEN_ADDRESS
-       - amount: 1000000000000000000
-       - recipient: YOUR_WALLET_ADDRESS
+   ```bash
+   cast send $TARGET_CHAIN_BRIDGE_ADDRESS "deposit(address,uint256,address)" $TARGET_CHAIN_TEST_TOKEN 1000000000000000000 $WALLET_ADDRESS --rpc-url $TARGET_CHAIN_RPC_URL --private-key $PRIVATE_KEY
+   ```
 
-3. **Wait for Indexer to Process:**
-   - The indexer detects the Deposit event on Base Sepolia.
-   - After $TARGET_CHAIN_CONFIRMATION_BLOCKS (12 blocks), it triggers distribute on Holesky.
-   - Tokens are transferred to YOUR_WALLET_ADDRESS on Holesky.
+3. **Switch back to the first terminal** to observe the indexer processing the transaction. You should see log messages indicating that a deposit event was detected and processed.
 
-4. **Check Receipt on Holesky:**
-   - Verify your wallet balance on Holesky.
-   - Check the Distribution event on Holesky Etherscan.
+4. **Verify Receipt on Holesky** (back in the second terminal):
+   ```bash
+   # Wait ~2-5 minutes for processing
+   cast call $HOLESKY_TEST_TOKEN "balanceOf(address)(uint256)" $WALLET_ADDRESS --rpc-url $HOLESKY_RPC_URL
+   ```
 
-## Quick Command Reference
+## Troubleshooting
 
-Here's a consolidated list of all necessary commands for setting up and running the indexer:
-
-# PostgreSQL Setup
-
+If you encounter database connection issues:
 ```bash
-# Start PostgreSQL (for Linux)
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
-```
+# Check if PostgreSQL is running
+sudo systemctl status postgresql  # Linux
+brew services list  # macOS
 
-```bash
-# Start PostgreSQL (for macOS)
-brew services start postgresql
-```
-
-```bash
-# Connect to PostgreSQL as postgres user to create database and user
-psql -U postgres
-```
-
-After running the command above, execute these SQL commands in the PostgreSQL prompt:
-```sql
-CREATE DATABASE bridge_indexer;
-CREATE USER indexer_user WITH ENCRYPTED PASSWORD 'your_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE bridge_indexer TO indexer_user;
-GRANT ALL ON SCHEMA public TO indexer_user;
-\q
-```
-
-```bash
-# Test connection with the new user (you'll be prompted for password)
-psql -U indexer_user -d bridge_indexer -W
-```
-
-# Indexer Setup
-
-```bash
-# Create a project directory
-mkdir -p ~/projects
-cd ~/projects
-```
-
-```bash
-# Clone repository
-git clone https://github.com/KyllianGenot/cross-chain-bridge-indexer.git
-cd cross-chain-bridge-indexer/bridge-indexer
-```
-
-```bash
-# Copy the example environment file
-cp .env.example .env
-```
-
-At this point, edit the .env file with your details (private keys, API keys, etc.)
-
-```bash
-# Initialize database schema
-psql -U indexer_user -d bridge_indexer -h localhost -f init.sql
-```
-
-```bash
-# Build the indexer
-cargo build
-```
-
-# Running the Indexer
-
-```bash
-# Load environment variables and run the indexer
-source .env
-cargo run
-```
-
-# Using the Bridge (Holesky → Base Sepolia)
-
-```bash
-# Approve tokens for the bridge to spend
-cast send $HOLESKY_TEST_TOKEN "approve(address,uint256)" $HOLESKY_BRIDGE_ADDRESS 1000000000000000000 --rpc-url $HOLESKY_RPC_URL --private-key $PRIVATE_KEY
-```
-
-```bash
-# Deposit tokens into the bridge
-cast send $HOLESKY_BRIDGE_ADDRESS "deposit(address,uint256,address)" $HOLESKY_TEST_TOKEN 1000000000000000000 $WALLET_ADDRESS --rpc-url $HOLESKY_RPC_URL --private-key $PRIVATE_KEY
-```
-
-# Using the Bridge (Base Sepolia → Holesky)
-
-```bash
-# Approve tokens for the bridge to spend
-cast send $TARGET_CHAIN_TEST_TOKEN "approve(address,uint256)" $TARGET_CHAIN_BRIDGE_ADDRESS 1000000000000000000 --rpc-url $TARGET_CHAIN_RPC_URL --private-key $PRIVATE_KEY
-```
-
-```bash
-# Deposit tokens into the bridge
-cast send $TARGET_CHAIN_BRIDGE_ADDRESS "deposit(address,uint256,address)" $TARGET_CHAIN_TEST_TOKEN 1000000000000000000 $WALLET_ADDRESS --rpc-url $TARGET_CHAIN_RPC_URL --private-key $PRIVATE_KEY
-```
-
-# Troubleshooting
-
-```bash
-# Check if PostgreSQL is running (Linux)
-sudo systemctl status postgresql
-```
-
-```bash
-# Check if PostgreSQL is running (macOS)
-brew services list
-```
-
-```bash
-# Test the database connection
+# Test the connection
 psql -U indexer_user -d bridge_indexer -h localhost -c "SELECT 1"
 ```
 
+If the indexer can't connect to a blockchain:
 ```bash
 # Test an RPC endpoint
 curl -X POST -H "Content-Type: application/json" \
   --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
   $HOLESKY_RPC_URL
 ```
+
+If the indexer is running but not detecting events:
+- Check that both terminals have loaded the environment variables using `source .env`
+- Verify that your Alchemy API key is correctly set in the .env file
+- Make sure you're using the correct contract addresses
+- Check that your wallet has sufficient tokens and ETH for gas
 
 Happy bridging!
